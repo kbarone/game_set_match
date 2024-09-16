@@ -1,0 +1,82 @@
+<!--{% for player in player_list %}
+    <p>{{player}}<p>
+ {% endfor %}
+
+
+ <!DOCTYPE html>
+ <html>
+ <head>
+     <title>Select Tennis Player</title>
+ </head>
+ <body>
+     <h1>Select a Tennis Player</h1>
+ 
+     <form method="post" action="{% url 'pick_player' %}">
+         {% csrf_token %}
+         <label for="player">Choose a player:</label>
+         <select id="player" name="player">
+             <option value="">--Select a player--</option>
+             {% for player in player_list %}
+                 <option value="{{ player }}">{{ player }}</option>
+             {% endfor %}
+         </select>
+ 
+         <button type="submit">Submit</button>
+     </form>
+ </body>
+ </html>-->
+
+
+
+
+
+ <!DOCTYPE html>
+<html>
+<head>
+    <title>Select Tennis Players</title>
+    <style>
+        .dropdown-container {
+            display: flex;
+            justify-content: space-between;
+            width: 400px;
+        }
+        .dropdown-container select {
+            width: 48%;
+        }
+    </style>
+</head>
+<body>
+    <h1>Select Two Tennis Players</h1>
+
+    {% if error_message %}
+        <p style="color: red;">{{ error_message }}</p>
+    {% endif %}
+
+    <form method="post" action="{% url 'pick_player' %}">
+        {% csrf_token %}
+        <div class="dropdown-container">
+            <!-- Player 1 Dropdown -->
+            <label for="player1">Player 1:</label>
+            <select id="player1" name="player1">
+                <option value="">--Select Player 1--</option>
+                {% for player in player_list %}
+                    <option value="{{ player }}">{{ player }}</option>
+                {% endfor %}
+            </select>
+
+            <!-- Player 2 Dropdown -->
+            <label for="player2">Player 2:</label>
+            <select id="player2" name="player2">
+                <option value="">--Select Player 2--</option>
+                {% for player in player_list %}
+                    <option value="{{ player }}">{{ player }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <button type="submit">Submit</button>
+    </form>
+</body>
+</html>
+
+ 
