@@ -1,14 +1,7 @@
 import pandas as pd
 import itertools
 
-def load_clean_data(all_past=False):
-    """
-    Load tennis data """
-    #d
-    if all_past:
-        df_matches = pd.read_csv("atp_matches_all.csv")
-    else:
-        df_matches = pd.read_csv("atp_100_matches2.csv")
+def add_missing_heights(df_matches):
     missing_heights = {"Rinky Hijikata": 178,
                         "Alexander Shevchenko": 185,
                         "Ben Shelton": 193,
@@ -29,35 +22,23 @@ def load_clean_data(all_past=False):
             df_matches.loc[row[0], "winner_ht"] = missing_heights.get(row[1]["winner_name"])
         if row[1]["loser_name"] in missing_heights.keys():
             df_matches.loc[row[0], "loser_ht"] = missing_heights.get(row[1]["loser_name"])
+    
+    return df_matches
 
-    feature_cols = ["tourney_date", "surface", "winner_id", "winner_hand", "winner_ht", "winner_ioc", "loser_id", 
-    "loser_hand", "loser_ht", "loser_ioc", "best_of", "w_ace", "w_df",
-    "w_svpt", "w_1stIn", "w_1stWon", "w_2ndWon", "w_SvGms", "w_bpSaved",
-    "w_bpFaced", "l_ace", "l_df", "l_svpt", "l_1stIn", "l_1stWon",
-    "l_2ndWon", "l_SvGms", "l_bpSaved", "l_bpFaced", "score", "minutes"]
+def merge_rank_info(df_matches, ranks):
 
-    df_matches = df_matches[feature_cols]
-    df_matches['tourney_date'] = df_matches['tourney_date'].apply(lambda x: pd.to_datetime(str(int(x)), format='%Y%m%d'))
-
-    ranks = pd.read_csv("atp_100_withIDs.csv")
-
-    if all_past:
-        df_matches = df_matches.merge(ranks[['rank','id']], left_on="winner_id", right_on="id", how="left").drop(columns="id", axis=1)
-    else:
-        df_matches = df_matches.merge(ranks[['rank','id']], left_on="winner_id", right_on="id").drop(columns="id", axis=1)
+    df_matches = df_matches.merge(ranks[['rank','id']], left_on="winner_id", right_on="id").drop(columns="id", axis=1)
     df_matches.rename(columns={"rank":"winner_rank"}, inplace=True)
 
-    if all_past:
-        df_matches = df_matches.merge(ranks[['rank','id']], left_on="loser_id", right_on="id", how="left").drop(columns="id", axis=1)
-    else:
-        df_matches = df_matches.merge(ranks[['rank','id']], left_on="loser_id", right_on="id", how="left").drop(columns="id", axis=1)
+    df_matches = df_matches.merge(ranks[['rank','id']], left_on="loser_id", right_on="id").drop(columns="id", axis=1)
     df_matches.rename(columns={"rank":"loser_rank"}, inplace=True)
 
     df_matches = df_matches.reset_index()
     df_matches.rename(columns={"index":"match_id"}, inplace=True)
 
-    # Using the dataframe of match statistics, create a dataframe of players, where each row is a row per
-    # player per match, with their associated match stats. To be used to caculate overall stats for the player
+    return df_matches
+
+def create_player_match_df(df_matches):
 
     df_players_matches = pd.DataFrame()
 
@@ -77,9 +58,10 @@ def load_clean_data(all_past=False):
         'match_id': match['match_id'], 'winner': 0, 'opponent': match['winner_id']}
         
         df_players_matches = pd.concat([df_players_matches, pd.DataFrame([winner_data]), pd.DataFrame([loser_data])])
+    
+    return df_players_matches
 
-    player_lst = ranks['id'].values
-
+def create_player_metrics_df(df_players_matches, player_lst, filter):
     df_players = pd.DataFrame()
     
     metric_cols = ['ace', 'df', 'svpt', '1stIn', '1stWon', '2ndWon', 'SvGms', 'bpSaved', 'bpFaced', 'minutes']
@@ -90,11 +72,11 @@ def load_clean_data(all_past=False):
         for dt in player_df['date'].sort_values().unique():
             player_prev = player_df[player_df['date'] < dt]
             metrics_temp = pd.DataFrame(player_prev.groupby(
-                ['player_id','surface'])[metric_cols].mean()).reset_index()
+                ['player_id', filter])[metric_cols].mean()).reset_index()
             counts_temp = pd.DataFrame(player_prev.groupby(
-                ['player_id','surface', 'winner']).size()).reset_index()
-            counts_temp = counts_temp.pivot(index=['player_id','surface'], columns='winner', values=0).reset_index()
-            final_temp = counts_temp.merge(metrics_temp, on=['player_id', 'surface'])
+                ['player_id',filter, 'winner']).size()).reset_index()
+            counts_temp = counts_temp.pivot(index=['player_id', filter], columns='winner', values=0).reset_index()
+            final_temp = counts_temp.merge(metrics_temp, on=['player_id', filter])
             final_temp['date'] = dt
             df_players = pd.concat([df_players, final_temp])
 
@@ -108,30 +90,39 @@ def load_clean_data(all_past=False):
     df_players['num_matches'] = df_players['wins'] + df_players['losses']
     df_players['win_pct'] = df_players['wins'] / df_players['num_matches']
 
-    df_player_opps = pd.DataFrame()
-    for player in player_lst:
-        player_df = df_players_matches[df_players_matches['player_id']==player]
-        for dt in player_df['date'].sort_values().unique():
-            player_prev = player_df[player_df['date'] < dt]
-            metrics_temp = pd.DataFrame(player_prev.groupby(
-                ['player_id','opponent'])[metric_cols].mean()).reset_index()
-            counts_temp = pd.DataFrame(player_prev.groupby(
-                ['player_id','opponent', 'winner']).size()).reset_index()
-            counts_temp = counts_temp.pivot(index=['player_id','opponent'], columns='winner', values=0).reset_index()
-            
-            final_temp = counts_temp.merge(metrics_temp, on=['player_id', 'opponent'])
-            final_temp['date'] = dt
-            df_player_opps = pd.concat([df_player_opps, final_temp])
+    return df_players
 
-    df_player_opps.rename(columns={0: 'losses', 1: 'wins'}, inplace=True)
-    df_player_opps.head(10)
+def load_clean_data(all_past=False):
+    """
+    Load tennis data """
+    
+    df_matches = pd.read_csv("atp_100_matches2.csv")
 
-    #df_player_opps = df_player_opps.merge(df_players_matches[['player_id', 'hand', 'ht', 'ioc', 'rank']].drop_duplicates().dropna(), on='player_id')
-    df_player_opps.fillna(value={'wins': 0, 'losses': 0}, inplace=True)
+    df_matches = add_missing_heights(df_matches)
 
-    df_player_opps['num_matches'] = df_player_opps['wins'] + df_player_opps['losses']
-    df_player_opps['win_pct'] = df_player_opps['wins'] / df_player_opps['num_matches']
-    df_player_opps.head()
+    feature_cols = ["tourney_date", "surface", "winner_id", "winner_hand", "winner_ht", "winner_ioc", "loser_id", 
+    "loser_hand", "loser_ht", "loser_ioc", "best_of", "w_ace", "w_df",
+    "w_svpt", "w_1stIn", "w_1stWon", "w_2ndWon", "w_SvGms", "w_bpSaved",
+    "w_bpFaced", "l_ace", "l_df", "l_svpt", "l_1stIn", "l_1stWon",
+    "l_2ndWon", "l_SvGms", "l_bpSaved", "l_bpFaced", "score", "minutes"]
+
+    df_matches = df_matches[feature_cols]
+    df_matches['tourney_date'] = df_matches['tourney_date'].apply(lambda x: pd.to_datetime(str(int(x)), format='%Y%m%d'))
+
+    ranks = pd.read_csv("atp_100_withIDs.csv")
+
+    df_matches = merge_rank_info(df_matches, ranks)
+
+    # Using the dataframe of match statistics, create a dataframe of players, where each row is a row per
+    # player per match, with their associated match stats. To be used to caculate overall stats for the player
+    
+    df_players_matches = create_player_match_df(df_matches)
+
+    player_lst = ranks['id'].values
+
+    df_players = create_player_metrics_df(df_players_matches, player_lst, "surface")
+
+    df_player_opps = create_player_metrics_df(df_players_matches, player_lst, "opponent")
 
     df_players = df_players.merge(df_player_opps, left_on=['player_id','date'], right_on=['player_id','date'], suffixes=("", "_opp"))
 
@@ -155,8 +146,8 @@ def load_clean_data(all_past=False):
     for col in rename_cols:
         df_matches_sm.rename(columns={col: "l_{}".format(col)}, inplace=True)
 
-    df_matches_sm['lower_won'] = df_matches_sm['w_rank'] > df_matches_sm['l_rank']
-    df_matches_sm['lower_won'] = df_matches_sm['lower_won'].astype(int)
+    #df_matches_sm['lower_won'] = df_matches_sm['w_rank'] > df_matches_sm['l_rank']
+    #df_matches_sm['lower_won'] = df_matches_sm['lower_won'].astype(int)
 
     df_matches_sm['w_hand'] = df_matches_sm['w_hand'].apply(lambda x: 1 if x == 'R' else 0)
     df_matches_sm['l_hand'] = df_matches_sm['l_hand'].apply(lambda x: 1 if x == 'R' else 0)
@@ -170,7 +161,6 @@ def create_future_dataset():
     missing_heights = {"Rinky Hijikata": 178,
                         "Alexander Shevchenko": 185,
                         "Ben Shelton": 193,
-                        
                         "Alex Michelsen": 193,
                         "Juncheng Shang": 183,
                         "Adam Walton": 188,
