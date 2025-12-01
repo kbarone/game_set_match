@@ -41,25 +41,27 @@ def merge_rank_info(df_matches, ranks):
 def create_player_match_df(df_matches):
 
     df_players_matches = pd.DataFrame()
-
+  
     for row in df_matches.iterrows():
         match = row[1]
-        winner_data = {'date': match['tourney_date'], 'player_id': match['winner_id'], 'hand': match['winner_hand'], 'ht': match['winner_ht'],
-        'ioc': match['winner_ioc'], 'rank': match['winner_rank'], 'ace': match['w_ace'], 'df': match['w_df'], 'svpt': match['w_svpt'], 
+        winner_data = {'date': match['tourney_date'], 'best_of': match['best_of'], 'player_id': match['winner_id'], 'hand': match['winner_hand'],
+        'ioc': match['winner_ioc'], 'elo': match['winner_elo'],  'surface_elo': match['winner_surf_elo'], 'ace': match['w_ace'], 'df': match['w_df'], 'svpt': match['w_svpt'], 
         '1stIn': match['w_1stIn'], '1stWon': match['w_1stWon'], '2ndWon': match['w_2ndWon'],
         'SvGms': match['w_SvGms'], 'bpSaved': match['w_bpSaved'], 'bpFaced': match['w_bpFaced'], 
         'surface': match['surface'], 'score': match['score'], 'minutes': match['minutes'], 
         'match_id': match['match_id'], 'winner': 1, 'opponent': match['loser_id']}
-        loser_data = {'date': match['tourney_date'], 'player_id': match['loser_id'], 'hand': match['loser_hand'], 'ht': match['loser_ht'],
-        'ioc': match['loser_ioc'], 'rank': match['loser_rank'], 'ace': match['l_ace'], 'df': match['l_df'], 'svpt': match['l_svpt'], 
+        loser_data = {'date': match['tourney_date'], 'best_of': match['best_of'], 'player_id': match['loser_id'], 'hand': match['loser_hand'], 
+        'ioc': match['loser_ioc'], 'elo': match['loser_elo'], 'surface_elo': match['loser_surf_elo'], 'ace': match['l_ace'], 'df': match['l_df'], 'svpt': match['l_svpt'], 
         '1stIn': match['l_1stIn'], '1stWon': match['l_1stWon'], '2ndWon': match['l_2ndWon'],
         'SvGms': match['l_SvGms'], 'bpSaved': match['l_bpSaved'], 'bpFaced': match['l_bpFaced'], 
         'surface': match['surface'], 'score': match['score'], 'minutes': match['minutes'], 
         'match_id': match['match_id'], 'winner': 0, 'opponent': match['winner_id']}
-        
+
         df_players_matches = pd.concat([df_players_matches, pd.DataFrame([winner_data]), pd.DataFrame([loser_data])])
     
     return df_players_matches
+
+
 
 def create_player_metrics_df(df_players_matches, player_lst, filter):
     df_players = pd.DataFrame()
@@ -72,82 +74,102 @@ def create_player_metrics_df(df_players_matches, player_lst, filter):
         for dt in player_df['date'].sort_values().unique():
             player_prev = player_df[player_df['date'] < dt]
             metrics_temp = pd.DataFrame(player_prev.groupby(
-                ['player_id', filter])[metric_cols].mean()).reset_index()
+                ['player_id', 'best_of', filter])[metric_cols].mean()).reset_index()
             counts_temp = pd.DataFrame(player_prev.groupby(
-                ['player_id',filter, 'winner']).size()).reset_index()
-            counts_temp = counts_temp.pivot(index=['player_id', filter], columns='winner', values=0).reset_index()
-            final_temp = counts_temp.merge(metrics_temp, on=['player_id', filter])
+                ['player_id', 'best_of',filter, 'winner']).size()).reset_index()
+            counts_temp = counts_temp.pivot(index=['player_id', 'best_of', filter], columns='winner', values=0).reset_index()
+            final_temp = counts_temp.merge(metrics_temp, on=['player_id','best_of', filter])
             final_temp['date'] = dt
             df_players = pd.concat([df_players, final_temp])
 
+  
     df_players.rename(columns={0: 'losses', 1: 'wins'}, inplace=True)
 
     df_players.drop_duplicates(inplace=True)
 
     df_players.fillna(value={'wins': 0, 'losses': 0}, inplace=True)
-    df_players = df_players.merge(df_players_matches[['player_id', 'hand', 'ht', 'ioc', 'rank']].drop_duplicates().dropna(), on='player_id')
+    df_players = df_players.merge(df_players_matches[['player_id', 'hand', 'ioc']].drop_duplicates().dropna(), on='player_id')
 
     df_players['num_matches'] = df_players['wins'] + df_players['losses']
     df_players['win_pct'] = df_players['wins'] / df_players['num_matches']
 
     return df_players
 
-def load_clean_data(all_past=False):
+def load_clean_data(file="atp_matches_elo.csv", run_opps=False):
     """
     Load tennis data """
-    
-    df_matches = pd.read_csv("atp_100_matches2.csv")
+        
+    df_matches = pd.read_csv(file)
 
-    df_matches = add_missing_heights(df_matches)
+    #df_matches = add_missing_heights(df_matches)
 
-    feature_cols = ["tourney_date", "surface", "winner_id", "winner_hand", "winner_ht", "winner_ioc", "loser_id", 
-    "loser_hand", "loser_ht", "loser_ioc", "best_of", "w_ace", "w_df",
+    feature_cols = ["match_id", "tourney_date", "surface",  "winner_id", "winner_hand",  "winner_ioc", "loser_id", 
+    "loser_hand", "loser_ioc", "best_of", "winner_elo", "winner_surf_elo", "w_ace", "w_df",
     "w_svpt", "w_1stIn", "w_1stWon", "w_2ndWon", "w_SvGms", "w_bpSaved",
-    "w_bpFaced", "l_ace", "l_df", "l_svpt", "l_1stIn", "l_1stWon",
+    "w_bpFaced", "loser_elo", "loser_surf_elo",  "l_ace", "l_df", "l_svpt", "l_1stIn", "l_1stWon",
     "l_2ndWon", "l_SvGms", "l_bpSaved", "l_bpFaced", "score", "minutes"]
 
     df_matches = df_matches[feature_cols]
     df_matches['tourney_date'] = df_matches['tourney_date'].apply(lambda x: pd.to_datetime(str(int(x)), format='%Y%m%d'))
 
-    ranks = pd.read_csv("atp_100_withIDs.csv")
+    #ranks = pd.read_csv("atp_100_withIDs.csv")
 
-    df_matches = merge_rank_info(df_matches, ranks)
+    #df_matches = merge_rank_info(df_matches, ranks)
+
+    df_matches = df_matches.dropna()
 
     # Using the dataframe of match statistics, create a dataframe of players, where each row is a row per
     # player per match, with their associated match stats. To be used to caculate overall stats for the player
-    
+
     df_players_matches = create_player_match_df(df_matches)
 
-    player_lst = ranks['id'].values
+    #player_lst = ranks['id'].values
+    player_lst = set(df_matches['winner_id'].values).union(df_matches['loser_id'].values)
 
     df_players = create_player_metrics_df(df_players_matches, player_lst, "surface")
-
-    df_player_opps = create_player_metrics_df(df_players_matches, player_lst, "opponent")
-
-    df_players = df_players.merge(df_player_opps, left_on=['player_id','date'], right_on=['player_id','date'], suffixes=("", "_opp"))
+    if run_opps:
+        df_player_opps = create_player_metrics_df(df_players_matches, player_lst, "opponent")
+    else:
+        df_player_opps = pd.read_csv("df_player_opps_LARGE.csv")
+    df_player_opps.drop("Unnamed: 0", axis=1, inplace=True)
 
     rename_cols = ['losses', 'wins', 'ace', 'df', 'svpt', '1stIn', '1stWon', '2ndWon', 'SvGms', 'bpSaved',
-    'bpFaced', 'minutes', 'hand', 'ht', 'ioc', 'rank', 'win_pct', 'num_matches', 'losses_opp', 'wins_opp',
-       'ace_opp', 'df_opp', 'svpt_opp', '1stIn_opp', '1stWon_opp',
-       '2ndWon_opp', 'SvGms_opp', 'bpSaved_opp', 'bpFaced_opp', 'minutes_opp',
-       'num_matches_opp', 'win_pct_opp']
+    'bpFaced', 'minutes', 'hand', 'ioc', 'win_pct', 'num_matches', 'losses_opp', 'wins_opp',
+        'ace_opp', 'df_opp', 'svpt_opp', '1stIn_opp', '1stWon_opp',
+        '2ndWon_opp', 'SvGms_opp', 'bpSaved_opp', 'bpFaced_opp', 'minutes_opp',
+        'num_matches_opp', 'win_pct_opp']
+    #df_players.drop([ 'hand_opp', 'ioc_opp'], axis=1, inplace=True)
 
-    df_matches_sm = df_matches[(df_matches['loser_id'].isin(player_lst)) & (df_matches['winner_id'].isin(player_lst))]
-    df_matches_sm = df_matches[['match_id', 'tourney_date', 'surface', 'winner_id', 'loser_id']]
-    df_matches_sm = df_matches_sm.merge(df_players, left_on=['surface', 'tourney_date', 'winner_id', 'loser_id'], 
-                                        right_on=['surface', 'date', 'player_id', 'opponent']).drop(columns='player_id', axis=1)
-
+    #df_matches_sm = df_matches[(df_matches['loser_id'].isin(player_lst)) & (df_matches['winner_id'].isin(player_lst))]
+    df_matches_sm = df_matches[['match_id', 'tourney_date', 'best_of', 'surface', 'winner_id', 'loser_id', 'winner_elo', 
+                            'winner_surf_elo', 'loser_elo', 'loser_surf_elo']]
+    
+    rename_cols = ['losses', 'wins', 'ace', 'df', 'svpt', '1stIn', '1stWon', '2ndWon', 'SvGms', 'bpSaved',
+    'bpFaced', 'minutes', 'hand', 'ioc', 'win_pct', 'num_matches', 'losses_opp', 'wins_opp',
+        'ace_opp', 'df_opp', 'svpt_opp', '1stIn_opp', '1stWon_opp',
+        '2ndWon_opp', 'SvGms_opp', 'bpSaved_opp', 'bpFaced_opp', 'minutes_opp',
+        'num_matches_opp', 'win_pct_opp']
+    df_matches_sm = df_matches_sm.merge(df_players, left_on=['surface', 'best_of', 'tourney_date', 'winner_id'], 
+                                        right_on=['surface', 'best_of', 'date', 'player_id'], 
+                                        how='inner').drop(columns='player_id', axis=1)
+    df_matches_sm = df_matches_sm.merge(df_player_opps, left_on=['tourney_date', 'best_of', 'winner_id', 'loser_id'], 
+                                        right_on=['date', 'best_of', 'player_id', 'opponent'], 
+                                        how='inner', 
+                                        suffixes=("", "_opp")).drop(columns='player_id', axis=1)
     for col in rename_cols:
         df_matches_sm.rename(columns={col: "w_{}".format(col)}, inplace=True)
 
-    df_matches_sm = df_matches_sm.merge(df_players, left_on=['surface', 'tourney_date', 'loser_id', 'winner_id'], 
-                                        right_on=['surface', 'date', 'player_id', 'opponent']).drop(columns='player_id', axis=1)
+
+    df_matches_sm = df_matches_sm.merge(df_players, left_on=['surface', 'best_of', 'tourney_date', 'loser_id'], 
+                                        right_on=['surface', 'best_of', 'date', 'player_id'],
+                                        how='inner')
+ 
+    df_matches_sm = df_matches_sm.merge(df_player_opps, left_on=['tourney_date', 'best_of', 'loser_id', 'winner_id'], 
+                                        right_on=['date', 'best_of', 'player_id', 'opponent'], 
+                                        how='inner', suffixes=("", "_opp")).drop(columns='player_id', axis=1)
 
     for col in rename_cols:
         df_matches_sm.rename(columns={col: "l_{}".format(col)}, inplace=True)
-
-    #df_matches_sm['lower_won'] = df_matches_sm['w_rank'] > df_matches_sm['l_rank']
-    #df_matches_sm['lower_won'] = df_matches_sm['lower_won'].astype(int)
 
     df_matches_sm['w_hand'] = df_matches_sm['w_hand'].apply(lambda x: 1 if x == 'R' else 0)
     df_matches_sm['l_hand'] = df_matches_sm['l_hand'].apply(lambda x: 1 if x == 'R' else 0)
